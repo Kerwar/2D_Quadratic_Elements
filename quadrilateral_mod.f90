@@ -7,38 +7,95 @@ module quadrilateral_mod
   
   private
   
-  public :: bilinear
+  public :: basisF
+  
   ! The reference square is the square (-1,-1), (1,-1), (1,1), (-1,1)
   ! We are going to assume Gaussian quadrature of order 2
+  real(DP), parameter :: x1 = - 1.0_DP / sqrt(3.0), x2 = 1.0_DP / sqrt(3.0)
+  real(DP), parameter :: w1 = 1.0_DP, w2 = 1.0_DP
+
+  abstract interface 
+    real(DP) function funct(p) result(res)
+      import :: Point, DP
+      type(Point) :: p
+    end function funct
+
+  end interface
+
   type, public :: Square
     type(Point) :: a(4)
-
+    real(DP) :: jacobDetInGaussPoint(2,2)
     contains
 
-    ! procedure :: ref => change_variable
+    procedure :: integral
+    procedure :: refToMain 
+    procedure :: jacobDet
     ! procedure :: area => area_quadrilateral
     ! procedure :: basis
   end type
 
+  interface Square
+    procedure :: newSquare
+  end interface
+
   contains
 
-! CALCULO DEL AREA DEL TRIANGULO MEDIANTE LA FORMULA DE HERON 
+  real(DP) function integral(self, f) result(res)
+    class(square) :: self
+    procedure(funct) :: f
+    res = f(Point(x1,x1)) * w1 * w1 * self%jacobDetInGaussPoint(1,1) + &
+          f(Point(x1,x2)) * w1 * w2 * self%jacobDetInGaussPoint(1,2) + &
+          f(Point(x2,x1)) * w2 * w1 * self%jacobDetInGaussPoint(2,1) + &
+          f(Point(x2,x2)) * w2 * w2 * self%jacobDetInGaussPoint(2,2) 
+    print *, f(Point(x1,x1)), self%jacobDetInGaussPoint(1,1), f(Point(x1,x2)), self%jacobDetInGaussPoint(1,2), &
+    f(Point(x2,x1)), self%jacobDetInGaussPoint(2,1), f(Point(x2,x2)), self%jacobDetInGaussPoint(2,2)
+  end function integral
 
-  ! real(DP) function area_quadrilateral(self) result(res)
-  !   class(Square) :: self
-  !   real(DP) :: edge1, edge2, edge3
-  !   real(DP) :: s
+  type(Square) function newSquare(a1, a2, a3, a4)
+    type(Point) :: a1, a2, a3, a4
 
-  !   edge1 = sqrt((self%a1%x-self%a2%x) ** 2 + (self%a1%y-self%a2%y) ** 2)
-  !   edge2 = sqrt((self%a1%x-self%a3%x) ** 2 + (self%a1%y-self%a3%y) ** 2)
-  !   edge3 = sqrt((self%a2%x-self%a3%x) ** 2 + (self%a2%y-self%a3%y) ** 2)
+    newSquare%a(1) = a1 
+    newSquare%a(2) = a2 
+    newSquare%a(3) = a3 
+    newSquare%a(4) = a4 
 
-  !   s = (edge1 + edge2 + edge3) / 2.0_DP
+    newSquare%jacobDetInGaussPoint(1,1) = newSquare%jacobDet(Point(x1,x1))
+    newSquare%jacobDetInGaussPoint(1,2) = newSquare%jacobDet(Point(x1,x2))
+    newSquare%jacobDetInGaussPoint(2,1) = newSquare%jacobDet(Point(x2,x1))
+    newSquare%jacobDetInGaussPoint(2,2) = newSquare%jacobDet(Point(x2,x2))
 
-  !   res = sqrt(s * (s-edge1) * (s-edge2) * (s-edge3))
-  ! end function area_triangle
+  end function newSquare
 
-  real(DP) function bilinear(A, p) result(res)
+  type(Point) function refToMain(self, p) result(res)
+    class(Square) :: self
+    type(Point)   :: p
+    real(DP) :: x, y 
+    integer  :: i 
+
+    x = sum([(basisF(i,p) * self%a(i)%x, i = 1,4)])
+    y = sum([(basisF(i,p) * self%a(i)%y, i = 1,4)])
+
+    res = Point(x,y)
+
+  end function refToMain
+
+  real(DP) function jacobDet(self, p) result(res)
+    class(Square) :: self
+    type(Point)   :: p
+    real(DP)      :: dxdpsi1, dxdpsi2, dydpsi1, dydpsi2
+    integer       :: i
+
+    dxdpsi1 = sum([(DX_basisF(i,p) * self%a(i)%x, i = 1,4)])
+    !print *, p%x, p%y, [(self%a(i)%x, i = 1,4)]
+    dxdpsi2 = sum([(DY_basisF(i,p) * self%a(i)%x, i = 1,4)])
+
+    dydpsi1 = sum([(DX_basisF(i,p) * self%a(i)%y, i = 1,4)])
+    dydpsi2 = sum([(DY_basisF(i,p) * self%a(i)%y, i = 1,4)])
+    res = abs(dxdpsi1 * dydpsi2 - dxdpsi2 * dydpsi1)
+    print *, p%x, p%y, dxdpsi1, dxdpsi2, dydpsi1, dydpsi2, res
+  end function jacobDet
+
+  real(DP) function basisF(A, p) result(res)
     integer :: A
     type(Point) :: p
 
@@ -52,13 +109,13 @@ module quadrilateral_mod
       case(4)
         res = linear_1D(1, p%x) * linear_1D(2, p%y)
       case DEFAULT
-        print *, "Bilinear basis can't have index", A, " in 2D"
+        print *, "basisF basis can't have index", A, " in 2D"
         stop
     end select
 
-  end function bilinear
+  end function basisF
 
-  real(DP) function DX_bilinear(A, p) result(res)
+  real(DP) function DX_basisF(A, p) result(res)
     integer :: A
     type(Point) :: p
 
@@ -72,13 +129,13 @@ module quadrilateral_mod
       case(4)
         res = D_linear_1D(1, p%x) * linear_1D(2, p%y)
       case DEFAULT
-        print *, "Bilinear basis can't have index", A, " in 2D"
+        print *, "basisF basis can't have index", A, " in 2D"
         stop
     end select
 
-  end function DX_bilinear
+  end function DX_basisF
 
-  real(DP) function DY_bilinear(A, p) result(res)
+  real(DP) function DY_basisF(A, p) result(res)
     integer :: A
     type(Point) :: p
 
@@ -92,20 +149,20 @@ module quadrilateral_mod
       case(4)
         res = linear_1D(1, p%x) * D_linear_1D(2, p%y)
       case DEFAULT
-        print *, "Bilinear basis can't have index", A, " in 2D"
+        print *, "basisF basis can't have index", A, " in 2D"
         stop
     end select
 
-  end function DY_bilinear
+  end function DY_basisF
 
   real(DP) function linear_1D(A, p) result(res)
     integer  :: A
     real(DP) :: p
     
     if (A == 1) then
-      res = (1_DP - p) / 2_DP
+      res = (1.0_DP - p) / 2.0_DP
     else if (A == 2) then
-      res = (1_DP + p) / 2_DP
+      res = (1.0_DP + p) / 2.0_DP
     else 
       print *, "Linear Basis can't have index", A 
       stop
@@ -117,12 +174,20 @@ module quadrilateral_mod
     real(DP) :: p
     
     if (A == 1) then
-      res = - 1_DP / 2_DP
+      res = - 1.0_DP / 2.0_DP
     else if (A == 2) then
-      res =   1_DP / 2_DP
+      res =   1.0_DP / 2.0_DP
     else 
       print *, "Linear Basis Derivative can't have index", A 
       stop
     end if
   end function D_linear_1D
+
+  real(DP) function gauss_quad(f) result(res)
+
+    procedure(funct) :: f
+    res = f(Point(x1,x1)) * w1 * w1 + f(Point(x1,x2)) * w1 * w2 + &
+    f(Point(x2,x1)) * w2 * w1 + f(Point(x2,x2)) * w2 * w2 
+  end function
+
 end module quadrilateral_mod
